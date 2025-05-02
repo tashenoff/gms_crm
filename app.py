@@ -87,7 +87,8 @@ def get_leads():
                 'id': lead['id'],
                 'username': user.get('username', 'Аноним'),
                 'message': lead['message'],
-                'created_at': format_date(lead['created_at'])
+                'created_at': format_date(lead['created_at']),
+                'status': lead['status'] if 'status' in lead else 'new'
             }
             formatted_leads.append(formatted_lead)
         
