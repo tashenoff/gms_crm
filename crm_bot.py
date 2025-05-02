@@ -120,7 +120,7 @@ def save_message(message):
         if message_id:
             delete_message(TELEGRAM_CHAT_ID, message_id)
         
-        # Send confirmation message with buttons
+        # Send new message with buttons
         buttons = [
             [{'text': 'Принято', 'callback_data': f'status_accepted|{lead_id}'},
              {'text': 'В работе', 'callback_data': f'status_in_progress|{lead_id}'},
@@ -128,9 +128,6 @@ def save_message(message):
         ]
         
         send_message(TELEGRAM_CHAT_ID, f'Новая заявка от {username} (ID: {sender_id})\n\n{text}', buttons)
-        
-        # Notify user about new lead
-        send_message(sender_id, f'Ваша заявка принята!\n\n{text}\n\nСтатус: новый')
         
     except Exception as e:
         logger.error(f'Error saving message: {e}')
@@ -154,7 +151,12 @@ def get_updates(offset=None):
             return get_updates(offset)
         
         response.raise_for_status()
-        return response.json()
+        result = response.json()
+        if result.get('ok'):
+            return result
+        else:
+            logger.error(f'Error in updates response: {result.get("description", "Unknown error")}')
+            return {'ok': False, 'description': 'Error in response'}
     except Exception as e:
         logger.error(f'Error getting updates: {e}')
         return {'ok': False, 'description': str(e)}
@@ -196,16 +198,39 @@ def send_message(chat_id, text, buttons=None):
     except Exception as e:
         logger.error(f'Error sending message: {e}')
 
-def delete_message(chat_id, message_id):
-    """Delete message from Telegram chat"""
+def edit_message(chat_id, message_id, text, buttons=None):
+    """Edit message in Telegram chat"""
     try:
         data = {
             'chat_id': chat_id,
-            'message_id': message_id
+            'message_id': message_id,
+            'text': text
         }
-        response = requests.post(f'{TELEGRAM_API_URL}/deleteMessage', json=data)
+
+        if buttons:
+            data['reply_markup'] = {
+                'inline_keyboard': buttons
+            }
+
+        response = requests.post(f'{TELEGRAM_API_URL}/editMessageText', json=data)
         response.raise_for_status()
-        logger.info(f'Message deleted: {message_id}')
+        
+        logger.info(f'Edited message: {message_id}')
+        
+    except Exception as e:
+        logger.error(f'Error editing message: {e}')
+
+def delete_message(chat_id, message_id):
+    """Delete message from Telegram chat"""
+    try:
+        response = requests.post(f'{TELEGRAM_API_URL}/deleteMessage', json={
+            'chat_id': chat_id,
+            'message_id': message_id
+        })
+        response.raise_for_status()
+        
+        logger.info(f'Deleted message: {message_id}')
+        
     except Exception as e:
         logger.error(f'Error deleting message: {e}')
 
@@ -278,18 +303,33 @@ def handle_callback_query(callback_query):
             
             logger.info(f'Updated lead status: lead_id={lead_id}, status={status}, executor_id={user_id}, executor_username={username}, executor_first_name={first_name}')
             
-            # Notify user about status change
-            send_message(lead[1], f'Ваша заявка обработана!\n\nСтатус: {status}\n\nИсполнитель: {first_name} (@{username})')
+            # Get updated lead information
+            conn = sqlite3.connect('crm.db')
+            cursor = conn.cursor()
+            cursor.execute('SELECT * FROM leads WHERE id = ?', (int(lead_id),))
+            updated_lead = cursor.fetchone()
+            conn.close()
             
-            # Send confirmation message to channel
-            send_message(TELEGRAM_CHAT_ID, f'Статус заявки обновлен: {status}. Исполнитель: {first_name} (@{username})')
-            
-            # Delete old message with buttons
-            delete_message(TELEGRAM_CHAT_ID, message_id)
+            if updated_lead:
+                # Edit the message to show the updated status and executor
+                status_text = {
+                    'accepted': 'Принято',
+                    'in_progress': 'В работе',
+                    'declined': 'Отказ'
+                }.get(status, 'Неизвестный статус')
+                
+                new_text = f'Заявка от {updated_lead[2]} (ID: {updated_lead[1]})\n\n{updated_lead[3]}\n\nСтатус: {status_text}\nИсполнитель: {updated_lead[7]} (@{updated_lead[6]})'
+                
+                # Edit message with new text and keep buttons
+                buttons = [
+                    [{'text': 'Принято', 'callback_data': f'status_accepted|{lead_id}'},
+                     {'text': 'В работе', 'callback_data': f'status_in_progress|{lead_id}'},
+                     {'text': 'Отказ', 'callback_data': f'status_declined|{lead_id}'}]
+                ]
+                
+                edit_message(TELEGRAM_CHAT_ID, message_id, new_text, buttons)
             
             # Answer callback query
-            answer_callback_query(callback_query.get('id'), f'Статус: {status}')
-            
             logger.info('=== END handle_callback_query ===')
             
         except Exception as e:
@@ -299,7 +339,6 @@ def handle_callback_query(callback_query):
     except Exception as e:
         logger.error(f'Error handling callback query: {e}')
         send_message(TELEGRAM_CHAT_ID, f'Ошибка при обновлении статуса: {str(e)}')
-        answer_callback_query(callback_query.get('id'), 'Ошибка при обновлении статуса')
 
 def main():
     """Start the bot"""
