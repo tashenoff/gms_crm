@@ -74,10 +74,6 @@ def get_leads():
         conn = get_db()
         cursor = conn.cursor()
         
-        # Get users
-        cursor.execute('SELECT * FROM users')
-        users = {user['telegram_id']: user for user in cursor.fetchall()}
-        
         # Get leads
         cursor.execute('SELECT * FROM leads ORDER BY created_at DESC')
         leads = cursor.fetchall()
@@ -90,14 +86,9 @@ def get_leads():
         formatted_leads = []
         
         for lead in leads:
-            # Получаем информацию об исполнителе
-            executor_id = lead['executor_id'] if lead['executor_id'] else None
-            executor_username = ''
-            executor_first_name = ''
-            
-            if executor_id and executor_id in users:
-                executor_username = users[executor_id]['username'] if users[executor_id]['username'] else ''
-                executor_first_name = users[executor_id]['first_name'] if 'first_name' in users[executor_id] else ''
+            # Получаем информацию об исполнителе напрямую из записи
+            executor_username = lead['executor_username'] or ''
+            executor_first_name = lead['executor_first_name'] or ''
             
             # Форматируем статус
             status = lead['status'] if lead['status'] else 'new'
