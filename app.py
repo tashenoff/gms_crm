@@ -244,6 +244,18 @@ def get_stats():
         logger.error(f'Error in get_stats: {e}')
         return jsonify({'error': str(e)}), 500
 
+@app.route('/reset', methods=['POST'])
+def reset_db():
+    """Обнуляет таблицу leads"""
+    conn = get_db()
+    cursor = conn.cursor()
+    # Удаляем все лиды и сбрасываем счетчик AUTOINCREMENT
+    cursor.execute('DELETE FROM leads')
+    cursor.execute("DELETE FROM sqlite_sequence WHERE name='leads'")
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True})
+
 if __name__ == '__main__':
     logger.info('Starting Flask server')
     app.run(debug=True, host='0.0.0.0')

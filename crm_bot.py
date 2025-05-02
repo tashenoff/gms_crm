@@ -147,7 +147,7 @@ def get_sender_info(message):
 def create_status_buttons(lead_id):
     """Create buttons for lead status updates"""
     return [
-        [{'text': 'Принято', 'callback_data': f'status_accepted|{lead_id}'},
+        [{'text': 'Оплачено', 'callback_data': f'status_accepted|{lead_id}'},
          {'text': 'В работе', 'callback_data': f'status_in_progress|{lead_id}'},
          {'text': 'Отказ', 'callback_data': f'status_declined|{lead_id}'}]
     ]
@@ -624,7 +624,7 @@ def parse_callback_data(data):
 def get_status_text(status):
     """Get human-readable status text"""
     return {
-        'accepted': 'Принято',
+        'accepted': 'Оплачено',
         'in_progress': 'В работе',
         'declined': 'Отказ'
     }.get(status, 'Неизвестный статус')

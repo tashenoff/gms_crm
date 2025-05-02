@@ -68,6 +68,7 @@
                             Применить
                         </button>
                     </div>
+                    <button id="reset-db" class="bg-red-500 hover:bg-red-600 text-white text-xs px-3 py-1 rounded">Сбросить базу</button>
                 </div>
             </div>
             
@@ -537,6 +538,23 @@
             } else {
                 alert('Пожалуйста, укажите обе даты');
             }
+        });
+        
+        // Обработчик сброса базы
+        document.getElementById('reset-db').addEventListener('click', function() {
+            if (!confirm('Вы уверены, что хотите обнулить базу лидов?')) {
+                return;
+            }
+            fetch('/reset', {method: 'POST'})
+                .then(response => response.json())
+                .then(result => {
+                    if (result.success) {
+                        location.reload();
+                    } else {
+                        alert('Ошибка при сбросе базы');
+                    }
+                })
+                .catch(() => alert('Ошибка при сбросе базы'));
         });
         
         // Обновляем данные при загрузке страницы
