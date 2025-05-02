@@ -1,17 +1,17 @@
 import os
-from dotenv import load_dotenv
-import requests
 import json
-
-# Load environment variables first
-load_dotenv()
 import sqlite3
-from datetime import datetime
 import time
 import logging
+from datetime import datetime
+from dotenv import load_dotenv
+import requests
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 # Load environment variables
@@ -73,28 +73,47 @@ def init_db():
 
 init_db()
 
+def get_sender_info(message):
+    """Extract sender information from message"""
+    # Check for channel post
+    sender_chat = message.get('sender_chat')
+    if sender_chat:
+        return {
+            'id': sender_chat.get('id'),
+            'username': sender_chat.get('username', 'Аноним')
+        }
+    
+    # Check for regular message
+    sender = message.get('from')
+    if sender:
+        return {
+            'id': sender.get('id'),
+            'username': sender.get('username', 'Аноним')
+        }
+    
+    return None
+
+def create_status_buttons(lead_id):
+    """Create buttons for lead status updates"""
+    return [
+        [{'text': 'Принято', 'callback_data': f'status_accepted|{lead_id}'},
+         {'text': 'В работе', 'callback_data': f'status_in_progress|{lead_id}'},
+         {'text': 'Отказ', 'callback_data': f'status_declined|{lead_id}'}]
+    ]
+
 def save_message(message):
-    """Save message to database"""
+    """Save message to database and create lead with buttons"""
     try:
         logger.info('Saving message to database')
-        logger.info(f'Message content: {message}')
-        logger.info(f'Message type: {type(message)}')
-        logger.info(f'Message keys: {message.keys()}')
         
-        # Get sender information for channel post
-        sender_chat = message.get('sender_chat')
-        if sender_chat:
-            sender_id = sender_chat.get('id')
-            username = sender_chat.get('username', 'Аноним')
-        else:
-            # Get sender information for regular message
-            sender = message.get('from')
-            if not sender:
-                logger.warning('No sender information in message')
-                return
-                
-            sender_id = sender.get('id')
-            username = sender.get('username', 'Аноним')
+        # Get sender information
+        sender_info = get_sender_info(message)
+        if not sender_info:
+            logger.warning('No sender information in message')
+            return
+        
+        sender_id = sender_info['id']
+        username = sender_info['username']
         
         # Get message text
         text = message.get('text')
@@ -121,12 +140,7 @@ def save_message(message):
             delete_message(TELEGRAM_CHAT_ID, message_id)
         
         # Send new message with buttons
-        buttons = [
-            [{'text': 'Принято', 'callback_data': f'status_accepted|{lead_id}'},
-             {'text': 'В работе', 'callback_data': f'status_in_progress|{lead_id}'},
-             {'text': 'Отказ', 'callback_data': f'status_declined|{lead_id}'}]
-        ]
-        
+        buttons = create_status_buttons(lead_id)
         send_message(TELEGRAM_CHAT_ID, f'Новая заявка от {username} (ID: {sender_id})\n\n{text}', buttons)
         
     except Exception as e:
@@ -234,17 +248,68 @@ def delete_message(chat_id, message_id):
     except Exception as e:
         logger.error(f'Error deleting message: {e}')
 
+def parse_callback_data(data):
+    """Parse callback data from button click"""
+    try:
+        # First try to split by '|'
+        parts = data.split('|')
+        if len(parts) == 2:
+            status, lead_id = parts
+            status = status.replace('status_', '')
+            return status, lead_id
+        else:
+            # If that doesn't work, try to extract lead_id from the end
+            lead_id = data.split('|')[-1]
+            if 'accepted' in data:
+                status = 'accepted'
+            elif 'declined' in data:
+                status = 'declined'
+            else:
+                status = 'in_progress'
+            return status, lead_id
+    except Exception as e:
+        logger.error(f'Error parsing callback data: {e}')
+        return None, None
+
+def get_status_text(status):
+    """Get human-readable status text"""
+    return {
+        'accepted': 'Принято',
+        'in_progress': 'В работе',
+        'declined': 'Отказ'
+    }.get(status, 'Неизвестный статус')
+
+def update_lead_status(lead_id, status, executor_info):
+    """Update lead status in database"""
+    conn = sqlite3.connect('crm.db')
+    cursor = conn.cursor()
+    
+    # Update lead status and add executor
+    cursor.execute('''
+        UPDATE leads 
+        SET status = ?, executor_id = ?, executor_username = ?, executor_first_name = ?
+        WHERE id = ?
+    ''', (status, executor_info['id'], executor_info['username'], 
+          executor_info['first_name'], int(lead_id)))
+    
+    conn.commit()
+    conn.close()
+    
+    logger.info(f'Updated lead status: lead_id={lead_id}, status={status}, executor={executor_info["username"]}')
+
+def get_lead_by_id(lead_id):
+    """Get lead information from database"""
+    conn = sqlite3.connect('crm.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM leads WHERE id = ?', (int(lead_id),))
+    lead = cursor.fetchone()
+    conn.close()
+    return lead
+
 def handle_callback_query(callback_query):
     """Handle callback query from button click"""
     try:
         logger.info('=== START handle_callback_query ===')
-        logger.info(f'Full callback query: {callback_query}')
-        logger.info(f'Callback query type: {type(callback_query)}')
-        logger.info(f'Callback query keys: {callback_query.keys()}')
-        
-        # Log callback query details
-        logger.info(f'Callback query details: {callback_query}')
-        logger.info(f'Callback data: {callback_query.get("data", "No data")}')
         
         # Get message ID from callback query
         message_id = callback_query.get('message', {}).get('message_id')
@@ -257,88 +322,83 @@ def handle_callback_query(callback_query):
             logger.warning('No callback data')
             return
             
-        # Log raw data before parsing
-        logger.info(f'Raw callback data: {data}')
-        
-        # Try to parse callback data
-        try:
-            # First try to split by '|'
-            parts = data.split('|')
-            if len(parts) == 2:
-                status, lead_id = parts
-                status = status.replace('status_', '')
-            else:
-                # If that doesn't work, try to extract lead_id from the end
-                lead_id = data.split('|')[-1]
-                status = 'accepted' if 'accepted' in data else 'declined' if 'declined' in data else 'in_progress'
-                
-            # Log parsed data
-            logger.info(f'Parsed status: {status}, lead_id: {lead_id}, message_id: {message_id}')
-            
-            # Update lead status in database
-            conn = sqlite3.connect('crm.db')
-            cursor = conn.cursor()
-            
-            # Get user who clicked the button
-            user_id = callback_query.get('from', {}).get('id')
-            username = callback_query.get('from', {}).get('username')
-            first_name = callback_query.get('from', {}).get('first_name')
-            
-            # Get lead information
-            cursor.execute('SELECT * FROM leads WHERE id = ?', (int(lead_id),))
-            lead = cursor.fetchone()
-            if not lead:
-                logger.error(f'Lead not found: {lead_id}')
-                return
-                
-            # Update lead status and add executor
-            cursor.execute('''
-                UPDATE leads 
-                SET status = ?, executor_id = ?, executor_username = ?, executor_first_name = ?
-                WHERE id = ?
-            ''', (status, user_id, username, first_name, int(lead_id)))
-            
-            conn.commit()
-            conn.close()
-            
-            logger.info(f'Updated lead status: lead_id={lead_id}, status={status}, executor_id={user_id}, executor_username={username}, executor_first_name={first_name}')
-            
-            # Get updated lead information
-            conn = sqlite3.connect('crm.db')
-            cursor = conn.cursor()
-            cursor.execute('SELECT * FROM leads WHERE id = ?', (int(lead_id),))
-            updated_lead = cursor.fetchone()
-            conn.close()
-            
-            if updated_lead:
-                # Edit the message to show the updated status and executor
-                status_text = {
-                    'accepted': 'Принято',
-                    'in_progress': 'В работе',
-                    'declined': 'Отказ'
-                }.get(status, 'Неизвестный статус')
-                
-                new_text = f'Заявка от {updated_lead[2]} (ID: {updated_lead[1]})\n\n{updated_lead[3]}\n\nСтатус: {status_text}\nИсполнитель: {updated_lead[7]} (@{updated_lead[6]})'
-                
-                # Edit message with new text and keep buttons
-                buttons = [
-                    [{'text': 'Принято', 'callback_data': f'status_accepted|{lead_id}'},
-                     {'text': 'В работе', 'callback_data': f'status_in_progress|{lead_id}'},
-                     {'text': 'Отказ', 'callback_data': f'status_declined|{lead_id}'}]
-                ]
-                
-                edit_message(TELEGRAM_CHAT_ID, message_id, new_text, buttons)
-            
-            # Answer callback query
-            logger.info('=== END handle_callback_query ===')
-            
-        except Exception as e:
-            logger.error(f'Error parsing callback data: {e}')
+        # Parse callback data
+        status, lead_id = parse_callback_data(data)
+        if not status or not lead_id:
             return
+            
+        logger.info(f'Parsed status: {status}, lead_id: {lead_id}, message_id: {message_id}')
+        
+        # Get executor information
+        executor_info = {
+            'id': callback_query.get('from', {}).get('id'),
+            'username': callback_query.get('from', {}).get('username'),
+            'first_name': callback_query.get('from', {}).get('first_name')
+        }
+        
+        # Get lead information before update
+        lead = get_lead_by_id(lead_id)
+        if not lead:
+            logger.error(f'Lead not found: {lead_id}')
+            return
+            
+        # Update lead status
+        update_lead_status(lead_id, status, executor_info)
+        
+        # Get updated lead information
+        updated_lead = get_lead_by_id(lead_id)
+        if updated_lead:
+            # Format status text
+            status_text = get_status_text(status)
+            
+            # Create message text
+            new_text = f'Заявка от {updated_lead[2]} (ID: {updated_lead[1]})\n\n{updated_lead[3]}\n\nСтатус: {status_text}\nИсполнитель: {updated_lead[7]} (@{updated_lead[6]})'
+            
+            # Edit message with new text and keep buttons
+            buttons = create_status_buttons(lead_id)
+            edit_message(TELEGRAM_CHAT_ID, message_id, new_text, buttons)
+        
+        logger.info('=== END handle_callback_query ===')
             
     except Exception as e:
         logger.error(f'Error handling callback query: {e}')
         send_message(TELEGRAM_CHAT_ID, f'Ошибка при обновлении статуса: {str(e)}')
+
+def process_callback_query(update, last_update_id):
+    """Process callback query from button click"""
+    callback_query = update.get('callback_query')
+    if not callback_query:
+        return last_update_id, False
+        
+    logger.info('=== CALLBACK QUERY RECEIVED ===')
+    logger.info(f'Callback data: {callback_query.get("data", "No data")}')
+    
+    handle_callback_query(callback_query)
+    return update['update_id'] + 1, True
+
+def process_message(update, last_update_id):
+    """Process regular message or channel post"""
+    # Check if it's a regular message or channel post
+    message = update.get('message') or update.get('channel_post')
+    if not message:
+        logger.warning('No message found in update')
+        return last_update_id, False
+    
+    chat_id = message.get('chat', {}).get('id')
+    if not chat_id:
+        logger.warning('No chat ID in message')
+        return last_update_id, False
+    
+    logger.info(f'Received message from chat {chat_id}')
+    
+    # Check if message is from target chat
+    if str(chat_id) == TELEGRAM_CHAT_ID:
+        logger.info('Message is from target chat')
+        save_message(message)
+    else:
+        logger.info(f'Message is from different chat: {chat_id}')
+    
+    return update['update_id'] + 1, True
 
 def main():
     """Start the bot"""
@@ -357,60 +417,35 @@ def main():
     
     while True:
         try:
-            logger.info('Checking for updates...')
+            # Get updates from Telegram API
             updates = get_updates(last_update_id)
-            logger.info(f'Received updates: {len(updates.get("result", []))}')
+            update_count = len(updates.get("result", []))
+            
+            if update_count > 0:
+                logger.info(f'Received {update_count} updates')
             
             if updates.get('ok', False):
                 for update in updates.get('result', []):
-                    logger.info(f'Raw update: {update}')
-                    
-                    # Check for callback query (button click)
-                    callback_query = update.get('callback_query')
-                    if callback_query:
-                        logger.info('=== CALLBACK QUERY RECEIVED ===')
-                        logger.info(f'Callback query: {callback_query}')
-                        logger.info(f'Callback query type: {type(callback_query)}')
-                        logger.info(f'Callback query keys: {callback_query.keys()}')
-                        logger.info(f'Callback data: {callback_query.get("data", "No data")}')
-                        logger.info(f'Callback query ID: {callback_query.get("id")}')
-                        
-                        handle_callback_query(callback_query)
-                        last_update_id = update['update_id'] + 1
+                    # Process callback queries (button clicks)
+                    new_id, processed = process_callback_query(update, last_update_id)
+                    if processed:
+                        last_update_id = new_id
                         continue
                     
-                    # Check if it's a channel post
-                    message = update.get('message')
-                    if not message:
-                        message = update.get('channel_post')
-                    if not message:
-                        logger.warning('No message found in update')
-                        continue
-                    
-                    logger.info(f'Received message from chat {message["chat"]["id"]}')
-                    logger.info(f'Message content: {message.get("text", "No text")}')
-                    
-                    # Log message details
-                    logger.info(f'Message type: {type(message)}')
-                    logger.info(f'Message keys: {message.keys()}')
-                    logger.info(f'Message text type: {type(message.get("text"))}')
-                    
-                    if str(message['chat']['id']) == TELEGRAM_CHAT_ID:
-                        logger.info('Message is from target chat')
-                        save_message(message)
-                    else:
-                        logger.info(f'Message is from different chat: {message["chat"]["id"]}')
-                    
-                    last_update_id = update['update_id'] + 1
+                    # Process regular messages and channel posts
+                    new_id, processed = process_message(update, last_update_id)
+                    if processed:
+                        last_update_id = new_id
             else:
-                logger.error(f'Error in updates response: {updates.get("description", "Unknown error")}')
+                error_msg = updates.get("description", "Unknown error")
+                logger.error(f'Error in updates response: {error_msg}')
                 time.sleep(10)  
                 
         except Exception as e:
             logger.error(f'Error in main loop: {e}')
             time.sleep(10)  
             
-        time.sleep(5)  
+        time.sleep(5)
 
 if __name__ == '__main__':
     main()
