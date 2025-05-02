@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CRM Система</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f2f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #eee;
+        }
+        .header h1 {
+            color: #1a73e8;
+            margin: 0;
+        }
+        .lead-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .lead-item {
+            background-color: #f8f9fa;
+            margin-bottom: 15px;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #1a73e8;
+        }
+        .lead-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .lead-user {
+            color: #1a73e8;
+            font-weight: bold;
+        }
+        .lead-time {
+            color: #666;
+            font-size: 0.9em;
+        }
+        .lead-message {
+            color: #333;
+            line-height: 1.5;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>CRM Система</h1>
+            <div>
+                <span>Обновление каждые 30 секунд</span>
+            </div>
+        </div>
+        <div id="leads-container">
+            <div class="loading">Загрузка заявок...</div>
+        </div>
+    </div>
+
+    <script>
+        function updateLeads() {
+            fetch('/leads')
+                .then(response => response.json())
+                .then(leads => {
+                    const container = document.getElementById('leads-container');
+                    if (leads.length === 0) {
+                        container.innerHTML = '<div style="text-align: center; padding: 20px; color: #666;">Нет заявок</div>';
+                        return;
+                    }
+                    
+                    container.innerHTML = leads.map(lead => `
+                        <div class="lead-item">
+                            <div class="lead-info">
+                                <div class="lead-user">${lead.username || 'Аноним'}</div>
+                                <div class="lead-time">${lead.created_at}</div>
+                            </div>
+                            <div class="lead-message">${lead.message}</div>
+                        </div>
+                    `).join('');
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    const container = document.getElementById('leads-container');
+                    container.innerHTML = '<div class="loading">Ошибка загрузки данных</div>';
+                });
+        }
+
+        // Initial load
+        updateLeads();
+
+        // Auto-refresh every 30 seconds
+        setInterval(() => {
+            updateLeads()
+                .catch(error => console.error('Ошибка при обновлении:', error));
+        }, 30000);
+    </script>
+</body>
+</html>
