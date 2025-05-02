@@ -532,21 +532,14 @@ def get_updates(offset=None):
         logger.error(f'Error getting updates: {e}')
         return {'ok': False, 'description': str(e)}
 
-def answer_callback_query(callback_query_id, text=None):
-    """Answer callback query"""
+def answer_callback_query(callback_query_id, text=None, show_alert=True):
+    """Send callback query answer to Telegram without logging to CRM"""
+    url = f"{TELEGRAM_API_URL}/answerCallbackQuery"
+    payload = {"callback_query_id": callback_query_id, "text": text, "show_alert": show_alert}
     try:
-        payload = {
-            'callback_query_id': callback_query_id
-        }
-        if text:
-            payload['text'] = text
-            payload['show_alert'] = False
-
-        response = requests.post(f'{TELEGRAM_API_URL}/answerCallbackQuery', json=payload)
-        response.raise_for_status()
-        logger.info('Answered callback query')
+        requests.post(url, json=payload)
     except Exception as e:
-        logger.error(f'Error answering callback query: {e}')
+        logger.error(f"Error answering callback query: {e}")
 
 def send_message(chat_id, text, buttons=None):
     """Send message to Telegram chat with optional buttons"""
@@ -657,6 +650,8 @@ def update_lead_status(lead_id, status, executor_info):
 def get_lead_by_id(lead_id):
     """Get lead information from database"""
     conn = sqlite3.connect('crm.db')
+    # Возвращаем строки как словари для доступа по ключу
+    conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM leads WHERE id = ?', (int(lead_id),))
     lead = cursor.fetchone()
@@ -699,6 +694,13 @@ def handle_callback_query(callback_query):
             logger.error(f'Lead not found: {lead_id}')
             return
             
+        # Ограничение: только исполнитель, принявший заявку, может менять статус далее
+        existing_executor = lead['executor_id']
+        if existing_executor and existing_executor != executor_info['id']:
+            # Оповещаем, что изменить статус может только тот, кто принял заявку
+            answer_callback_query(callback_query.get('id'), 'Изменять статус может только исполнитель задачи.')
+            return
+        
         # Сохраняем оригинальный текст сообщения, чтобы не потерять структуру
         original_message_text = callback_query.get('message', {}).get('text', '')
         
