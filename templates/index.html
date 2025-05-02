@@ -38,18 +38,98 @@
         body.modal-open {
             overflow: hidden;
         }
+        .status-column {
+            min-height: 300px;
+        }
     </style>
 </head>
 <body class="bg-gray-100">
-    <div class="container mx-auto px-4 py-8 max-w-6xl">
+    <div class="container mx-auto px-4 py-8 max-w-7xl">
+        <!-- Блок статистики -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-8">
+            <div class="flex justify-between items-center border-b pb-4 mb-6">
+                <h1 class="text-2xl font-bold text-blue-600">Статистика заявок</h1>
+                <div class="flex items-center space-x-2">
+                    <div class="flex items-center">
+                        <label for="period-select" class="mr-2 text-sm text-gray-600">Период:</label>
+                        <select id="period-select" class="border rounded px-2 py-1 text-sm">
+                            <option value="all">Все время</option>
+                            <option value="today">Сегодня</option>
+                            <option value="week">Неделя</option>
+                            <option value="month">Месяц</option>
+                            <option value="custom">Указать даты</option>
+                        </select>
+                    </div>
+                    <div id="custom-date-range" class="hidden flex items-center space-x-2">
+                        <input type="date" id="start-date" class="border rounded px-2 py-1 text-sm">
+                        <span class="text-gray-500">—</span>
+                        <input type="date" id="end-date" class="border rounded px-2 py-1 text-sm">
+                        <button id="apply-date-filter" class="bg-blue-500 hover:bg-blue-600 text-white text-xs px-3 py-1 rounded">
+                            Применить
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+                <div class="bg-blue-50 rounded-lg p-4 text-center border border-blue-200">
+                    <div class="text-3xl font-bold text-blue-600" id="stats-total">0</div>
+                    <div class="text-sm text-gray-600">Всего заявок</div>
+                </div>
+                <div class="bg-green-50 rounded-lg p-4 text-center border border-green-200">
+                    <div class="text-3xl font-bold text-green-600" id="stats-accepted">0</div>
+                    <div class="text-sm text-gray-600">Принято</div>
+                </div>
+                <div class="bg-yellow-50 rounded-lg p-4 text-center border border-yellow-200">
+                    <div class="text-3xl font-bold text-yellow-600" id="stats-in-progress">0</div>
+                    <div class="text-sm text-gray-600">В работе</div>
+                </div>
+                <div class="bg-red-50 rounded-lg p-4 text-center border border-red-200">
+                    <div class="text-3xl font-bold text-red-600" id="stats-declined">0</div>
+                    <div class="text-sm text-gray-600">Отказ</div>
+                </div>
+                <div class="bg-purple-50 rounded-lg p-4 text-center border border-purple-200">
+                    <div class="text-3xl font-bold text-purple-600" id="stats-clients">0</div>
+                    <div class="text-sm text-gray-600">Уникальных клиентов</div>
+                </div>
+            </div>
+            <div class="bg-indigo-50 rounded-lg p-4 text-center border border-indigo-200 mt-6">
+                <div class="text-lg font-medium text-indigo-700">Сумма принятых заявок</div>
+                <div class="text-3xl font-bold text-indigo-900 mt-2" id="sum-total-revenue">0 ₸</div>
+            </div>
+        </div>
+        
+        <!-- Канбан-доска -->
         <div class="bg-white rounded-lg shadow-md p-6 mb-8">
             <div class="flex justify-between items-center border-b pb-4 mb-6">
                 <h1 class="text-2xl font-bold text-blue-600">CRM Система</h1>
                 <div class="text-gray-500">Последнее обновление: <span id="last-update"></span></div>
             </div>
             
-            <div id="leads-container" class="space-y-6">
-                <div class="text-center py-8 text-gray-500">Загрузка данных...</div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- Колонка "Принято" -->
+                <div class="bg-green-50 rounded-lg p-4 border border-green-200">
+                    <h2 class="text-lg font-bold text-green-700 mb-4 pb-2 border-b border-green-200">Принято</h2>
+                    <div id="accepted-leads" class="status-column space-y-4">
+                        <div class="text-center py-8 text-gray-500">Загрузка данных...</div>
+                    </div>
+                </div>
+                
+                <!-- Колонка "В работе" -->
+                <div class="bg-yellow-50 rounded-lg p-4 border border-yellow-200">
+                    <h2 class="text-lg font-bold text-yellow-700 mb-4 pb-2 border-b border-yellow-200">В работе</h2>
+                    <div id="in-progress-leads" class="status-column space-y-4">
+                        <div class="text-center py-8 text-gray-500">Загрузка данных...</div>
+                    </div>
+                </div>
+                
+                <!-- Колонка "Отказ" -->
+                <div class="bg-red-50 rounded-lg p-4 border border-red-200">
+                    <h2 class="text-lg font-bold text-red-700 mb-4 pb-2 border-b border-red-200">Отказ</h2>
+                    <div id="declined-leads" class="status-column space-y-4">
+                        <div class="text-center py-8 text-gray-500">Загрузка данных...</div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -60,6 +140,15 @@
             <span class="modal-close" onclick="closeModal()">&times;</span>
             <h2 class="text-xl font-bold mb-4">Все заявки клиента</h2>
             <div id="client-leads" class="space-y-4"></div>
+        </div>
+    </div>
+    
+    <!-- Модальное окно для отображения деталей заказа -->
+    <div id="order-modal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close" onclick="closeOrderModal()">&times;</span>
+            <h2 class="text-xl font-bold mb-4">Детали заказа</h2>
+            <div id="order-details" class="space-y-4"></div>
         </div>
     </div>
     
@@ -74,111 +163,191 @@
                     // Сохраняем все заявки в глобальной переменной
                     allLeads = leads;
                     
-                    const container = document.getElementById('leads-container');
                     if (leads.length === 0) {
-                        container.innerHTML = '<div class="text-center py-8 text-gray-500">Нет заявок</div>';
+                        document.getElementById('accepted-leads').innerHTML = '<div class="text-center py-8 text-gray-500">Нет заявок</div>';
+                        document.getElementById('in-progress-leads').innerHTML = '<div class="text-center py-8 text-gray-500">Нет заявок</div>';
+                        document.getElementById('declined-leads').innerHTML = '<div class="text-center py-8 text-gray-500">Нет заявок</div>';
                         return;
                     }
                     
-                    // Отображаем только сгруппированные заявки
-                    const groupedLeads = leads.filter(lead => lead.grouped);
+                    // Удаляем дубликаты заказов (с одинаковым содержанием)
+                    const uniqueLeads = removeDuplicateOrders(leads);
                     
-                    if (groupedLeads.length === 0) {
-                        container.innerHTML = '<div class="text-center py-8 text-gray-500">Нет сгруппированных заявок</div>';
-                        return;
-                    }
+                    // Распределяем заявки по колонкам на основе статуса
+                    const acceptedLeads = uniqueLeads.filter(lead => lead.status === 'accepted');
+                    const inProgressLeads = uniqueLeads.filter(lead => lead.status === 'in_progress' || lead.status === 'new');
+                    const declinedLeads = uniqueLeads.filter(lead => lead.status === 'declined');
                     
-                    container.innerHTML = groupedLeads.map(lead => `
-                        <div class="bg-gray-50 rounded-lg p-5 border-l-4 border-blue-500">
-                            <div class="flex justify-between items-center mb-4">
-                                <div class="font-semibold text-blue-600">${lead.username || 'Аноним'}</div>
-                                <div class="text-sm text-gray-500">
-                                    ${lead.created_at}
-                                    ${lead.grouped ? `<span class="ml-2 bg-blue-100 text-blue-800 text-xs font-medium px-2 py-0.5 rounded-full">Группа: ${lead.group_count} заявок</span>` : ''}
-                                </div>
-                            </div>
-                            
-                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                                ${lead.client_name ? `
-                                    <div class="bg-white p-3 rounded shadow-sm">
-                                        <div class="text-xs text-gray-500 mb-1">👤 Клиент</div>
-                                        <div class="font-medium">${lead.client_name}</div>
-                                    </div>` : ''}
-                                
-                                ${lead.company ? `
-                                    <div class="bg-white p-3 rounded shadow-sm">
-                                        <div class="text-xs text-gray-500 mb-1">🏢 Компания</div>
-                                        <div class="font-medium">${lead.company}</div>
-                                    </div>` : ''}
-                                
-                                ${lead.phone ? `
-                                    <div class="bg-white p-3 rounded shadow-sm">
-                                        <div class="text-xs text-gray-500 mb-1">📞 Телефон</div>
-                                        <div class="font-medium">${lead.phone}</div>
-                                    </div>` : ''}
-                                
-                                ${lead.city ? `
-                                    <div class="bg-white p-3 rounded shadow-sm">
-                                        <div class="text-xs text-gray-500 mb-1">🏙️ Город</div>
-                                        <div class="font-medium">${lead.city}</div>
-                                    </div>` : ''}
-                                
-                                ${lead.address ? `
-                                    <div class="bg-white p-3 rounded shadow-sm">
-                                        <div class="text-xs text-gray-500 mb-1">📍 Адрес</div>
-                                        <div class="font-medium">${lead.address}</div>
-                                    </div>` : ''}
-                                
-                                ${lead.total_amount ? `
-                                    <div class="bg-white p-3 rounded shadow-sm">
-                                        <div class="text-xs text-gray-500 mb-1">💰 Сумма</div>
-                                        <div class="font-medium">${lead.total_amount}</div>
-                                    </div>` : ''}
-                                
-                                ${lead.order_date ? `
-                                    <div class="bg-white p-3 rounded shadow-sm">
-                                        <div class="text-xs text-gray-500 mb-1">📅 Дата</div>
-                                        <div class="font-medium">${lead.order_date}</div>
-                                    </div>` : ''}
-                            </div>
-                            
-                            ${lead.order_details ? `
-                                <div class="bg-white p-3 rounded shadow-sm mb-4">
-                                    <div class="text-xs text-gray-500 mb-1">📦 Заказ</div>
-                                    <div class="order-details bg-gray-50 p-3 rounded text-sm">${lead.order_details}</div>
-                                </div>` : ''}
-                            
-                            ${!lead.client_name && !lead.phone ? `
-                                <div class="bg-white p-3 rounded shadow-sm mb-4">
-                                    <div class="text-xs text-gray-500 mb-1">Сообщение</div>
-                                    <div class="whitespace-pre-line">${lead.message}</div>
-                                </div>` : ''}
-                            
-                            <div class="flex justify-between items-center pt-3 border-t border-gray-200">
-                                <div class="flex items-center">
-                                    <span class="text-sm mr-2">Статус:</span>
-                                    <span class="px-3 py-1 rounded-full text-xs font-medium ${getStatusClass(lead.status)}">${getStatusText(lead.status)}</span>
-                                </div>
-                                <div class="flex items-center">
-                                    ${lead.executor_username ? `
-                                        <div class="text-sm text-gray-600">
-                                            Исполнитель: ${lead.executor_first_name || ''} (@${lead.executor_username})
-                                        </div>` : ''}
-                                    ${lead.grouped ? `
-                                        <button onclick="showClientLeads('${lead.phone}')" class="ml-3 bg-blue-500 hover:bg-blue-600 text-white text-xs px-2 py-1 rounded">
-                                            Все заявки
-                                        </button>` : ''}
-                                </div>
-                            </div>
-                        </div>
-                    `).join('');
+                    // Обновляем колонки
+                    document.getElementById('accepted-leads').innerHTML = renderLeadsList(acceptedLeads);
+                    document.getElementById('in-progress-leads').innerHTML = renderLeadsList(inProgressLeads);
+                    document.getElementById('declined-leads').innerHTML = renderLeadsList(declinedLeads);
                     
                     document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
                 })
                 .catch(error => {
                     console.error('Error fetching leads:', error);
-                    document.getElementById('leads-container').innerHTML = '<div class="text-center py-8 text-red-500">Ошибка загрузки данных</div>';
+                    document.getElementById('accepted-leads').innerHTML = '<div class="text-center py-8 text-red-500">Ошибка загрузки данных</div>';
+                    document.getElementById('in-progress-leads').innerHTML = '<div class="text-center py-8 text-red-500">Ошибка загрузки данных</div>';
+                    document.getElementById('declined-leads').innerHTML = '<div class="text-center py-8 text-red-500">Ошибка загрузки данных</div>';
                 });
+        }
+        
+        // Функция для удаления дубликатов заказов
+        function removeDuplicateOrders(leads) {
+            const uniqueLeads = [];
+            const seenOrders = new Set();
+            
+            for (const lead of leads) {
+                // Создаем уникальный ключ для заявки на основе содержимого
+                const orderKey = `${lead.client_name}|${lead.address}|${lead.order_details}`;
+                
+                // Если такого ключа еще нет, добавляем заявку в список уникальных
+                if (!seenOrders.has(orderKey) || !orderKey.includes('|')) {
+                    seenOrders.add(orderKey);
+                    uniqueLeads.push(lead);
+                }
+            }
+            
+            return uniqueLeads;
+        }
+        
+        function renderLeadsList(leads) {
+            if (leads.length === 0) {
+                return '<div class="text-center py-8 text-gray-500">Нет заявок</div>';
+            }
+            
+            return leads.map(lead => `
+                <div class="bg-white rounded-lg p-4 shadow-sm border-l-4 border-blue-500">
+                    <div class="flex justify-between items-center mb-3">
+                        <div class="font-semibold text-blue-600">${lead.client_name || 'Клиент'}</div>
+                        <div class="text-xs text-gray-500">
+                            ${lead.created_at}
+                            ${lead.related_count > 1 ? `<span class="ml-2 bg-blue-100 text-blue-800 text-xs font-medium px-2 py-0.5 rounded-full">Заказов: ${lead.related_count}</span>` : ''}
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 gap-2 mb-3">
+                        ${lead.phone ? `<div class="text-sm"><span class="font-medium">📞</span> ${lead.phone}</div>` : ''}
+                        ${lead.city ? `<div class="text-sm"><span class="font-medium">🏙️</span> ${lead.city}</div>` : ''}
+                        ${lead.address ? `<div class="text-sm"><span class="font-medium">📍</span> ${lead.address}</div>` : ''}
+                        ${lead.total_amount ? `<div class="text-sm"><span class="font-medium">💰</span> ${lead.total_amount}</div>` : ''}
+                    </div>
+                    
+                    ${lead.order_details ? `
+                        <div class="text-sm mb-3">
+                            <div class="order-details bg-gray-50 p-2 rounded text-xs">${lead.order_details.length > 100 ? lead.order_details.substring(0, 100) + '...' : lead.order_details}</div>
+                        </div>` : ''}
+                    
+                    <div class="flex justify-between items-center mt-2">
+                        <div>
+                            <span class="px-2 py-0.5 rounded-full text-xs font-medium ${getStatusClass(lead.status)}">${getStatusText(lead.status)}</span>
+                        </div>
+                        <div class="flex space-x-2">
+                            <button onclick="showOrderDetails(${lead.id})" class="bg-gray-500 hover:bg-gray-600 text-white text-xs px-2 py-1 rounded">
+                                Подробнее
+                            </button>
+                            ${lead.phone ? `
+                                <button onclick="showClientLeads('${lead.phone}')" class="bg-blue-500 hover:bg-blue-600 text-white text-xs px-2 py-1 rounded">
+                                    Все заявки
+                                </button>
+                            ` : ''}
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        function showOrderDetails(leadId) {
+            // Находим заявку по ID
+            const lead = allLeads.find(l => l.id === leadId);
+            
+            if (!lead) {
+                alert('Заявка не найдена');
+                return;
+            }
+            
+            // Заполняем модальное окно деталями заказа
+            const orderDetailsContainer = document.getElementById('order-details');
+            orderDetailsContainer.innerHTML = `
+                <div class="bg-white rounded-lg p-4 shadow-sm border-l-4 border-blue-500">
+                    <div class="flex justify-between items-center mb-4">
+                        <div class="font-semibold text-blue-600 text-lg">${lead.client_name || 'Клиент'}</div>
+                        <div class="text-sm text-gray-500">${lead.created_at}</div>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <div class="bg-gray-50 p-3 rounded">
+                            <div class="text-xs text-gray-500 mb-1">👤 Клиент</div>
+                            <div class="font-medium">${lead.client_name || 'Не указан'}</div>
+                        </div>
+                        
+                        ${lead.company ? `
+                            <div class="bg-gray-50 p-3 rounded">
+                                <div class="text-xs text-gray-500 mb-1">🏢 Компания</div>
+                                <div class="font-medium">${lead.company}</div>
+                            </div>` : ''}
+                        
+                        ${lead.phone ? `
+                            <div class="bg-gray-50 p-3 rounded">
+                                <div class="text-xs text-gray-500 mb-1">📞 Телефон</div>
+                                <div class="font-medium">${lead.phone}</div>
+                            </div>` : ''}
+                        
+                        ${lead.city ? `
+                            <div class="bg-gray-50 p-3 rounded">
+                                <div class="text-xs text-gray-500 mb-1">🏙️ Город</div>
+                                <div class="font-medium">${lead.city}</div>
+                            </div>` : ''}
+                        
+                        ${lead.address ? `
+                            <div class="bg-gray-50 p-3 rounded">
+                                <div class="text-xs text-gray-500 mb-1">📍 Адрес</div>
+                                <div class="font-medium">${lead.address}</div>
+                            </div>` : ''}
+                        
+                        ${lead.total_amount ? `
+                            <div class="bg-gray-50 p-3 rounded">
+                                <div class="text-xs text-gray-500 mb-1">💰 Сумма</div>
+                                <div class="font-medium">${lead.total_amount}</div>
+                            </div>` : ''}
+                        
+                        ${lead.order_date ? `
+                            <div class="bg-gray-50 p-3 rounded">
+                                <div class="text-xs text-gray-500 mb-1">📅 Дата</div>
+                                <div class="font-medium">${lead.order_date}</div>
+                            </div>` : ''}
+                    </div>
+                    
+                    ${lead.order_details ? `
+                        <div class="bg-gray-50 p-3 rounded mb-4">
+                            <div class="text-xs text-gray-500 mb-1">📦 Заказ</div>
+                            <div class="order-details bg-white p-3 rounded text-sm">${lead.order_details}</div>
+                        </div>` : ''}
+                    
+                    <div class="flex justify-between items-center pt-3 border-t border-gray-200">
+                        <div>
+                            <span class="text-sm mr-2">Статус:</span>
+                            <span class="px-3 py-1 rounded-full text-xs font-medium ${getStatusClass(lead.status)}">${getStatusText(lead.status)}</span>
+                        </div>
+                        ${lead.executor_username ? `
+                            <div class="text-sm text-gray-600">
+                                Исполнитель: ${lead.executor_first_name || ''} (@${lead.executor_username})
+                            </div>` : ''}
+                    </div>
+                </div>
+            `;
+            
+            // Открываем модальное окно
+            const modal = document.getElementById('order-modal');
+            modal.style.display = 'block';
+            document.body.classList.add('modal-open');
+        }
+        
+        function closeOrderModal() {
+            const modal = document.getElementById('order-modal');
+            modal.style.display = 'none';
+            document.body.classList.remove('modal-open');
         }
         
         function showClientLeads(phone) {
@@ -275,19 +444,116 @@
             }
         }
         
-        // Закрытие модального окна при клике вне его содержимого
+        // Закрытие модальных окон при клике вне их содержимого
         window.onclick = function(event) {
-            const modal = document.getElementById('client-modal');
-            if (event.target == modal) {
+            const clientModal = document.getElementById('client-modal');
+            const orderModal = document.getElementById('order-modal');
+            
+            if (event.target == clientModal) {
                 closeModal();
             }
+            
+            if (event.target == orderModal) {
+                closeOrderModal();
+            }
         }
+        
+        // Функция для загрузки статистики
+        function loadStats(startDate = null, endDate = null) {
+            // Формируем URL с параметрами даты, если заданы
+            let url = '/stats';
+            const params = [];
+            if (startDate) params.push('start_date=' + encodeURIComponent(startDate));
+            if (endDate) params.push('end_date=' + encodeURIComponent(endDate));
+            if (params.length) url += '?' + params.join('&');
+            
+            fetch(url)
+                .then(response => response.json())
+                .then(stats => {
+                    document.getElementById('stats-total').textContent = stats.total;
+                    document.getElementById('stats-accepted').textContent = stats.accepted;
+                    document.getElementById('stats-in-progress').textContent = stats.in_progress + stats.new;
+                    document.getElementById('stats-declined').textContent = stats.declined;
+                    document.getElementById('stats-clients').textContent = stats.unique_clients;
+                    const revenue = stats.revenue ? parseFloat(stats.revenue).toLocaleString('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '0.00';
+                    document.getElementById('sum-total-revenue').textContent = `${revenue} ₸`;
+                })
+                .catch(error => {
+                    console.error('Error loading stats:', error);
+                });
+        }
+        
+        // Обработчик изменения периода
+        document.getElementById('period-select').addEventListener('change', function() {
+            const period = this.value;
+            const customDateRange = document.getElementById('custom-date-range');
+            
+            if (period === 'custom') {
+                customDateRange.classList.remove('hidden');
+                return;
+            } else {
+                customDateRange.classList.add('hidden');
+            }
+            
+            let startDate = null;
+            let endDate = null;
+            
+            const today = new Date();
+            const formattedToday = today.toISOString().split('T')[0];
+            
+            switch (period) {
+                case 'today':
+                    startDate = formattedToday;
+                    endDate = formattedToday;
+                    break;
+                case 'week':
+                    const weekAgo = new Date();
+                    weekAgo.setDate(today.getDate() - 7);
+                    startDate = weekAgo.toISOString().split('T')[0];
+                    endDate = formattedToday;
+                    break;
+                case 'month':
+                    const monthAgo = new Date();
+                    monthAgo.setMonth(today.getMonth() - 1);
+                    startDate = monthAgo.toISOString().split('T')[0];
+                    endDate = formattedToday;
+                    break;
+                case 'all':
+                default:
+                    // Не устанавливаем даты для "Все время"
+                    break;
+            }
+            
+            loadStats(startDate, endDate);
+        });
+        
+        // Обработчик применения пользовательского диапазона дат
+        document.getElementById('apply-date-filter').addEventListener('click', function() {
+            const startDate = document.getElementById('start-date').value;
+            const endDate = document.getElementById('end-date').value;
+            
+            if (startDate && endDate) {
+                loadStats(startDate, endDate);
+            } else {
+                alert('Пожалуйста, укажите обе даты');
+            }
+        });
         
         // Обновляем данные при загрузке страницы
         updateLeads();
         
+        // Загружаем статистику при загрузке страницы
+        loadStats();
+        
         // Обновляем данные каждые 30 секунд
         setInterval(updateLeads, 30000);
+        setInterval(() => {
+            const period = document.getElementById('period-select').value;
+            if (period !== 'custom') {
+                // Для автоматического обновления используем текущий выбранный период
+                document.getElementById('period-select').dispatchEvent(new Event('change'));
+            }
+        }, 30000);
     </script>
 </body>
 </html>

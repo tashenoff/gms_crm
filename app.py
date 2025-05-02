@@ -1,9 +1,10 @@
 import logging
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, request
 import sqlite3
 from datetime import datetime
 import os
 from dotenv import load_dotenv
+import re
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -16,7 +17,10 @@ load_dotenv()
 
 def get_db():
     try:
-        conn = sqlite3.connect('crm.db')
+        # Используем абсолютный путь к базе данных
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        db_path = os.path.join(base_dir, 'crm.db')
+        conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
         return conn
     except Exception as e:
@@ -79,81 +83,12 @@ def get_leads():
         leads = cursor.fetchall()
         logger.debug(f'Found {len(leads)} leads')
         
-        # Группировка заявок по номеру телефона
-        phone_groups = {}
+        # Создаем словарь для хранения связей между телефонами и заявками
+        phone_to_leads = {}
         
-        for lead in leads:
-            phone = lead['phone'] if lead['phone'] else ''
-            
-            # Если телефон пустой, не группируем
-            if not phone:
-                continue
-                
-            # Нормализуем телефон (убираем пробелы, тире и т.д.)
-            normalized_phone = ''.join(c for c in phone if c.isdigit() or c == '+')
-            
-            if normalized_phone not in phone_groups:
-                phone_groups[normalized_phone] = []
-                
-            phone_groups[normalized_phone].append(lead)
-        
-        # Format leads for API response
+        # Форматируем все заявки для API
         formatted_leads = []
         
-        # Сначала обрабатываем группы
-        for normalized_phone, group in phone_groups.items():
-            # Считаем количество уникальных заявок по содержанию заказа
-            unique_orders = set()
-            for lead in group:
-                order = lead['order_details'] if lead['order_details'] else ''
-                unique_orders.add(order)
-            
-            # Берем самую новую заявку из группы (она уже отсортирована по дате)
-            latest_lead = group[0]
-            
-            # Получаем информацию об исполнителе
-            executor_id = latest_lead['executor_id'] if latest_lead['executor_id'] else None
-            executor_username = ''
-            executor_first_name = ''
-            
-            if executor_id and executor_id in users:
-                executor_username = users[executor_id]['username'] if users[executor_id]['username'] else ''
-                executor_first_name = users[executor_id]['first_name'] if 'first_name' in users[executor_id] else ''
-            
-            # Форматируем статус
-            status = latest_lead['status'] if latest_lead['status'] else 'new'
-            
-            # Форматируем данные заказа
-            order_details = latest_lead['order_details'] if latest_lead['order_details'] else ''
-            
-            # Создаем форматированную заявку
-            formatted_lead = {
-                'id': latest_lead['id'],
-                'username': latest_lead['username'] or 'Аноним',
-                'message': latest_lead['message'],
-                'created_at': format_date(latest_lead['created_at']),
-                'status': status,
-                'grouped': True,
-                'group_count': len(unique_orders),  # Количество уникальных заказов
-                'group_ids': [l['id'] for l in group],
-                
-                # Добавляем структурированные поля
-                'client_name': latest_lead['client_name'] if latest_lead['client_name'] else '',
-                'company': latest_lead['company'] if latest_lead['company'] else '',
-                'phone': latest_lead['phone'] if latest_lead['phone'] else '',
-                'city': latest_lead['city'] if latest_lead['city'] else '',
-                'address': latest_lead['address'] if latest_lead['address'] else '',
-                'order_details': order_details,
-                'total_amount': latest_lead['total_amount'] if latest_lead['total_amount'] else '',
-                'order_date': latest_lead['order_date'] if latest_lead['order_date'] else '',
-                
-                # Добавляем информацию об исполнителе
-                'executor_username': executor_username,
-                'executor_first_name': executor_first_name
-            }
-            formatted_leads.append(formatted_lead)
-        
-        # Затем добавляем все заявки для полного списка (нужно для модального окна)
         for lead in leads:
             # Получаем информацию об исполнителе
             executor_id = lead['executor_id'] if lead['executor_id'] else None
@@ -170,6 +105,10 @@ def get_leads():
             # Форматируем данные заказа
             order_details = lead['order_details'] if lead['order_details'] else ''
             
+            # Нормализуем телефон (если есть)
+            phone = lead['phone'] if lead['phone'] else ''
+            normalized_phone = ''.join(c for c in phone if c.isdigit() or c == '+') if phone else ''
+            
             # Создаем форматированную заявку
             formatted_lead = {
                 'id': lead['id'],
@@ -177,13 +116,12 @@ def get_leads():
                 'message': lead['message'],
                 'created_at': format_date(lead['created_at']),
                 'status': status,
-                'grouped': False,
-                'group_count': 1,
                 
                 # Добавляем структурированные поля
                 'client_name': lead['client_name'] if lead['client_name'] else '',
                 'company': lead['company'] if lead['company'] else '',
                 'phone': lead['phone'] if lead['phone'] else '',
+                'normalized_phone': normalized_phone,
                 'city': lead['city'] if lead['city'] else '',
                 'address': lead['address'] if lead['address'] else '',
                 'order_details': order_details,
@@ -194,12 +132,126 @@ def get_leads():
                 'executor_username': executor_username,
                 'executor_first_name': executor_first_name
             }
+            
+            # Добавляем заявку в массив
             formatted_leads.append(formatted_lead)
+            
+            # Сохраняем связь между телефоном и заявкой для быстрого поиска
+            if normalized_phone:
+                if normalized_phone not in phone_to_leads:
+                    phone_to_leads[normalized_phone] = []
+                phone_to_leads[normalized_phone].append(formatted_lead['id'])
+        
+        # Добавляем информацию о связанных заявках
+        for lead in formatted_leads:
+            if lead['normalized_phone'] and lead['normalized_phone'] in phone_to_leads:
+                lead['related_leads'] = phone_to_leads[lead['normalized_phone']]
+                lead['related_count'] = len(phone_to_leads[lead['normalized_phone']])
+            else:
+                lead['related_leads'] = [lead['id']]
+                lead['related_count'] = 1
         
         return jsonify(formatted_leads)
     except Exception as e:
         logger.error(f'Error in get_leads: {e}')
         raise
+
+@app.route('/stats', methods=['GET'])
+def get_stats():
+    try:
+        # Получаем параметры фильтрации
+        start_date = request.args.get('start_date', None)
+        end_date = request.args.get('end_date', None)
+        
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Базовый запрос
+        query = 'SELECT status, COUNT(*) as count FROM leads'
+        params = []
+        
+        # Добавляем условия фильтрации по дате
+        if start_date or end_date:
+            query += ' WHERE'
+            
+            if start_date:
+                query += ' created_at >= ?'
+                params.append(start_date)
+                
+            if end_date:
+                if start_date:
+                    query += ' AND'
+                query += ' created_at <= ?'
+                params.append(end_date)
+        
+        # Группируем по статусу
+        query += ' GROUP BY status'
+        
+        cursor.execute(query, params)
+        results = cursor.fetchall()
+        
+        # Форматируем результаты
+        stats = {
+            'accepted': 0,
+            'in_progress': 0,
+            'declined': 0,
+            'new': 0,
+            'total': 0
+        }
+        
+        for row in results:
+            status = row['status'] if row['status'] else 'new'
+            count = row['count']
+            stats[status] = count
+            stats['total'] += count
+        
+        # Получаем общее количество уникальных клиентов
+        query = 'SELECT COUNT(DISTINCT phone) as unique_clients FROM leads WHERE phone IS NOT NULL AND phone != ""'
+        params = []
+        
+        if start_date or end_date:
+            query += ' AND'
+            
+            if start_date:
+                query += ' created_at >= ?'
+                params.append(start_date)
+                
+            if end_date:
+                if start_date:
+                    query += ' AND'
+                query += ' created_at <= ?'
+                params.append(end_date)
+        
+        cursor.execute(query, params)
+        unique_clients = cursor.fetchone()['unique_clients']
+        stats['unique_clients'] = unique_clients
+        
+        # Считаем доход вручную: получаем все total_amount, очищаем и суммируем
+        filters = ['status = ?']
+        params_amt = ['accepted']
+        if start_date:
+            filters.append('created_at >= ?')
+            params_amt.append(start_date)
+        if end_date:
+            filters.append('created_at <= ?')
+            params_amt.append(end_date)
+        query_amt = 'SELECT total_amount FROM leads WHERE ' + ' AND '.join(filters)
+        cursor.execute(query_amt, params_amt)
+        rows_amt = cursor.fetchall()
+        total_revenue = 0.0
+        for r in rows_amt:
+            s = (r['total_amount'] or '').replace(' ', '').replace('\u00A0', '')
+            s = re.sub(r'[^0-9.]', '', s)
+            try:
+                total_revenue += float(s)
+            except:
+                continue
+        stats['revenue'] = round(total_revenue, 2)
+        
+        return jsonify(stats)
+    except Exception as e:
+        logger.error(f'Error in get_stats: {e}')
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     logger.info('Starting Flask server')
