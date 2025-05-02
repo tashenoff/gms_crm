@@ -47,6 +47,16 @@ def init_db():
             executor_id INTEGER,
             executor_username TEXT,
             executor_first_name TEXT,
+            
+            client_name TEXT,
+            company TEXT,
+            phone TEXT,
+            city TEXT,
+            address TEXT,
+            order_details TEXT,
+            total_amount TEXT,
+            order_date TEXT,
+            
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (telegram_id) REFERENCES users (telegram_id)
         )
@@ -65,6 +75,47 @@ def init_db():
     
     try:
         cursor.execute('ALTER TABLE leads ADD COLUMN executor_first_name TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+        
+    # Add new structured fields if they don't exist
+    try:
+        cursor.execute('ALTER TABLE leads ADD COLUMN client_name TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+        
+    try:
+        cursor.execute('ALTER TABLE leads ADD COLUMN company TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+        
+    try:
+        cursor.execute('ALTER TABLE leads ADD COLUMN phone TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+        
+    try:
+        cursor.execute('ALTER TABLE leads ADD COLUMN city TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+        
+    try:
+        cursor.execute('ALTER TABLE leads ADD COLUMN address TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+        
+    try:
+        cursor.execute('ALTER TABLE leads ADD COLUMN order_details TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+        
+    try:
+        cursor.execute('ALTER TABLE leads ADD COLUMN total_amount TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+        
+    try:
+        cursor.execute('ALTER TABLE leads ADD COLUMN order_date TEXT')
     except sqlite3.OperationalError:
         pass  # Column already exists
     
@@ -101,6 +152,274 @@ def create_status_buttons(lead_id):
          {'text': 'Отказ', 'callback_data': f'status_declined|{lead_id}'}]
     ]
 
+def parse_message_text(text):
+    """
+    Parse message text into structured fields
+    Expected format может быть разным, включая:
+    
+    1. Простой формат:
+    Клиент: Иван Иванов
+    Телефон: +7 (123) 456-78-90
+    
+    2. Формат с эмодзи:
+    👤 Клиент: Иван Иванов
+    📞 Телефон: +7 (123) 456-78-90
+    
+    3. Сложный формат с вложенной структурой:
+    👤 Клиент: Менеджер
+    📞 Телефон: Имя клиента
+    📍 Адрес: +7 (123) 456-78-90
+    📦 Заказ: Город
+    💰 Сумма: Адрес
+    📅 Дата: 🆕 Новый заказ! 👤 Клиент: Реальное имя клиента...
+    """
+    parsed_data = {
+        'client_name': '',
+        'company': '',
+        'phone': '',
+        'city': '',
+        'address': '',
+        'order_details': '',
+        'total_amount': '',
+        'order_date': ''
+    }
+    
+    # Default to original text if parsing fails
+    parsed_data['original_text'] = text
+    
+    # Try to parse structured fields
+    try:
+        # Словарь соответствия эмодзи полям
+        emoji_mappings = {
+            '👤': 'client_name',   # Клиент
+            '🏢': 'company',       # Компания
+            '📱': 'phone',         # Телефон (альтернативный)
+            '📞': 'phone',         # Телефон
+            '🏙️': 'city',          # Город
+            '📍': 'address',       # Адрес
+            '📦': 'order_details', # Заказ
+            '💰': 'total_amount',  # Сумма
+            '🕒': 'order_date',    # Время (альтернативный)
+            '📅': 'order_date'     # Дата
+        }
+        
+        # Словарь соответствия ключевых слов полям
+        key_mappings = {
+            'клиент': 'client_name',
+            'имя': 'client_name',
+            'фио': 'client_name',
+            'компания': 'company',
+            'организация': 'company',
+            'фирма': 'company',
+            'телефон': 'phone',
+            'тел': 'phone',
+            'номер': 'phone',
+            'город': 'city',
+            'населенный пункт': 'city',
+            'адрес': 'address',
+            'местоположение': 'address',
+            'заказ': 'order_details',
+            'товар': 'order_details',
+            'услуга': 'order_details',
+            'описание': 'order_details',
+            'сумма': 'total_amount',
+            'общая сумма': 'total_amount',
+            'цена': 'total_amount',
+            'стоимость': 'total_amount',
+            'дата': 'order_date',
+            'время': 'order_date',
+            'срок': 'order_date'
+        }
+        
+        # Проверяем, есть ли в сообщении строка с "🆕 Новый заказ!"
+        # Если есть, то это сложная структура с вложенной информацией
+        complex_format = False
+        nested_data_start = None
+        
+        lines = text.split('\n')
+        for i, line in enumerate(lines):
+            if '🆕 Новый заказ!' in line:
+                complex_format = True
+                nested_data_start = i
+                break
+        
+        # Проверяем, есть ли в сообщении строки с "шт. x" - это признак заказа
+        order_lines = []
+        for i, line in enumerate(lines):
+            if 'шт. x' in line and '₸' in line:
+                order_lines.append(line.strip())
+        
+        # Если это сложная структура, обрабатываем её отдельно
+        if complex_format and nested_data_start is not None:
+            # Сначала обрабатываем первую часть сообщения (до "🆕 Новый заказ!")
+            first_part_lines = lines[:nested_data_start]
+            
+            # Затем обрабатываем вторую часть (после "🆕 Новый заказ!")
+            second_part = ' '.join(lines[nested_data_start:])
+            
+            # Извлекаем информацию из второй части (она содержит реальные данные клиента)
+            # Ищем все поля с эмодзи во второй части
+            for emoji, field in emoji_mappings.items():
+                if emoji in second_part:
+                    parts = second_part.split(emoji)
+                    for i in range(1, len(parts)):
+                        part = parts[i].strip()
+                        if ':' in part:
+                            value = part.split(':', 1)[1].strip()
+                            # Обрезаем значение до следующего эмодзи, если оно есть
+                            for e in emoji_mappings.keys():
+                                if e in value:
+                                    value = value.split(e)[0].strip()
+                            
+                            # Если это поле заказа, сохраняем всё, что идёт после него до следующего эмодзи
+                            if field == 'order_details':
+                                if order_lines:
+                                    parsed_data[field] = '\n'.join(order_lines)
+                                else:
+                                    parsed_data[field] = value
+                            else:
+                                parsed_data[field] = value
+            
+            # Если не нашли некоторые поля во второй части, ищем их в первой части
+            for i, line in enumerate(first_part_lines):
+                line = line.strip()
+                if not line:
+                    continue
+                
+                # Проверяем наличие эмодзи в начале строки
+                for emoji, field in emoji_mappings.items():
+                    if emoji in line and not parsed_data[field]:
+                        parts = line.split(emoji, 1)[1].strip()
+                        if ':' in parts:
+                            value = parts.split(':', 1)[1].strip()
+                            parsed_data[field] = value
+                            break
+            
+            # Если общая сумма не найдена, ищем её специально
+            if not parsed_data['total_amount']:
+                for line in lines:
+                    if '💰 Общая сумма:' in line:
+                        parsed_data['total_amount'] = line.split('💰 Общая сумма:', 1)[1].strip()
+                        break
+            
+            # Если дата не найдена, ищем её специально
+            if not parsed_data['order_date']:
+                for line in lines:
+                    if '🕒 Дата:' in line:
+                        parsed_data['order_date'] = line.split('🕒 Дата:', 1)[1].strip()
+                        break
+        else:
+            # Обычная обработка для простой структуры
+            # Сначала извлекаем все поля с эмодзи
+            extracted_fields = {}
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                
+                # Проверяем наличие эмодзи в начале строки
+                for emoji, field in emoji_mappings.items():
+                    if emoji in line:
+                        parts = line.split(emoji, 1)[1].strip()
+                        if ':' in parts:
+                            value = parts.split(':', 1)[1].strip()
+                            extracted_fields[field] = value
+                            break
+            
+            # Если найдены строки заказа, сохраняем их
+            if order_lines:
+                extracted_fields['order_details'] = '\n'.join(order_lines)
+            
+            # Проверяем, есть ли смещение полей (случай с менеджером Catzilla)
+            if 'client_name' in extracted_fields and extracted_fields.get('client_name') == 'Catzilla':
+                # Это менеджер, а не клиент - происходит смещение полей
+                # Правильная структура:
+                # client_name = phone (alex)
+                # phone = address (+77761604911)
+                # address = order_details (абая 8)
+                # order_details = order_lines (Заглушка...)
+                
+                # Сохраняем оригинальные значения
+                manager_name = extracted_fields.get('client_name', '')
+                client_name = extracted_fields.get('phone', '')
+                phone = extracted_fields.get('address', '')
+                city = extracted_fields.get('order_details', '')
+                address = extracted_fields.get('total_amount', '')
+                
+                # Проверяем, что телефон похож на телефон (содержит + и цифры)
+                if phone and ('+' in phone or any(c.isdigit() for c in phone)):
+                    # Это похоже на смещение полей, применяем коррекцию
+                    parsed_data['client_name'] = client_name
+                    parsed_data['phone'] = phone
+                    parsed_data['city'] = city
+                    parsed_data['address'] = address
+                    
+                    # Сохраняем информацию о менеджере
+                    logger.info(f'Detected message from manager: {manager_name}')
+                    
+                    # Если есть строки заказа, используем их
+                    if order_lines:
+                        parsed_data['order_details'] = '\n'.join(order_lines)
+                else:
+                    # Если не похоже на смещение, используем оригинальные значения
+                    parsed_data.update(extracted_fields)
+            else:
+                # Нет смещения, используем извлеченные поля как есть
+                parsed_data.update(extracted_fields)
+                
+                # Проверяем наличие ключевых слов для полей, которые не были найдены
+                for line in lines:
+                    line = line.strip()
+                    if not line or ':' not in line:
+                        continue
+                    
+                    key, value = line.split(':', 1)
+                    key = key.strip().lower()
+                    value = value.strip()
+                    
+                    for keyword, field in key_mappings.items():
+                        if keyword in key and not parsed_data[field]:
+                            parsed_data[field] = value
+                            break
+        
+        # Проверяем, что все поля заполнены корректно
+        # Телефон должен содержать цифры и быть длиннее 5 символов
+        if parsed_data['phone'] and (len(parsed_data['phone']) < 5 or not any(c.isdigit() for c in parsed_data['phone'])):
+            # Это может быть не телефон, ищем настоящий телефон в других полях
+            for field in ['address', 'city', 'client_name']:
+                if parsed_data[field] and ('+' in parsed_data[field] or any(c.isdigit() for c in parsed_data[field])):
+                    # Нашли похожий на телефон текст в другом поле
+                    real_phone = parsed_data[field]
+                    # Если это поле клиента, сохраняем значение телефона в поле телефона
+                    if field == 'client_name':
+                        parsed_data['phone'] = real_phone
+                    else:
+                        # Меняем местами значения
+                        parsed_data['phone'], parsed_data[field] = real_phone, parsed_data['phone']
+        
+        # Проверяем, что имя клиента не содержит телефон
+        if parsed_data['client_name'] and '+' in parsed_data['client_name'] and any(c.isdigit() for c in parsed_data['client_name']):
+            # Это может быть телефон, а не имя клиента
+            if not parsed_data['phone']:
+                parsed_data['phone'] = parsed_data['client_name']
+                parsed_data['client_name'] = ''
+        
+        # Если город и адрес перепутаны (город обычно короче адреса)
+        if parsed_data['city'] and parsed_data['address'] and len(parsed_data['city']) > len(parsed_data['address']):
+            parsed_data['city'], parsed_data['address'] = parsed_data['address'], parsed_data['city']
+        
+        # Если заказ содержит только одно слово, это может быть не заказ
+        if parsed_data['order_details'] and len(parsed_data['order_details'].split()) == 1:
+            # Проверяем, может ли это быть город
+            if not parsed_data['city'] and parsed_data['order_details'].isalpha():
+                parsed_data['city'] = parsed_data['order_details']
+                parsed_data['order_details'] = ''
+                
+    except Exception as e:
+        logger.error(f'Error parsing message text: {e}')
+    
+    return parsed_data
+
 def save_message(message):
     """Save message to database and create lead with buttons"""
     try:
@@ -121,12 +440,26 @@ def save_message(message):
             logger.warning('No text in message')
             return
             
+        # Parse message text into structured fields
+        parsed_data = parse_message_text(text)
+        
         # Save to database
         conn = sqlite3.connect('crm.db')
         cursor = conn.cursor()
         
-        cursor.execute('INSERT INTO leads (telegram_id, username, message) VALUES (?, ?, ?)',
-                      (sender_id, username, text))
+        cursor.execute('''
+            INSERT INTO leads (
+                telegram_id, username, message, 
+                client_name, company, phone, city, address, 
+                order_details, total_amount, order_date
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            sender_id, username, text,
+            parsed_data['client_name'], parsed_data['company'], 
+            parsed_data['phone'], parsed_data['city'], 
+            parsed_data['address'], parsed_data['order_details'], 
+            parsed_data['total_amount'], parsed_data['order_date']
+        ))
         
         lead_id = cursor.lastrowid
         conn.commit()
@@ -139,9 +472,33 @@ def save_message(message):
         if message_id:
             delete_message(TELEGRAM_CHAT_ID, message_id)
         
+        # Format structured message
+        structured_text = f"Новая заявка от {username} (ID: {sender_id})\n\n"
+        
+        if parsed_data['client_name']:
+            structured_text += f"👤 Клиент: {parsed_data['client_name']}\n"
+        if parsed_data['company']:
+            structured_text += f"🏢 Компания: {parsed_data['company']}\n"
+        if parsed_data['phone']:
+            structured_text += f"📞 Телефон: {parsed_data['phone']}\n"
+        if parsed_data['city']:
+            structured_text += f"🏙️ Город: {parsed_data['city']}\n"
+        if parsed_data['address']:
+            structured_text += f"📍 Адрес: {parsed_data['address']}\n"
+        if parsed_data['order_details']:
+            structured_text += f"📦 Заказ: {parsed_data['order_details']}\n"
+        if parsed_data['total_amount']:
+            structured_text += f"💰 Сумма: {parsed_data['total_amount']}\n"
+        if parsed_data['order_date']:
+            structured_text += f"📅 Дата: {parsed_data['order_date']}\n"
+            
+        # If no structured fields were parsed, use original text
+        if structured_text == f"Новая заявка от {username} (ID: {sender_id})\n\n":
+            structured_text += text
+        
         # Send new message with buttons
         buttons = create_status_buttons(lead_id)
-        send_message(TELEGRAM_CHAT_ID, f'Новая заявка от {username} (ID: {sender_id})\n\n{text}', buttons)
+        send_message(TELEGRAM_CHAT_ID, structured_text, buttons)
         
     except Exception as e:
         logger.error(f'Error saving message: {e}')
@@ -342,6 +699,9 @@ def handle_callback_query(callback_query):
             logger.error(f'Lead not found: {lead_id}')
             return
             
+        # Сохраняем оригинальный текст сообщения, чтобы не потерять структуру
+        original_message_text = callback_query.get('message', {}).get('text', '')
+        
         # Update lead status
         update_lead_status(lead_id, status, executor_info)
         
@@ -351,8 +711,17 @@ def handle_callback_query(callback_query):
             # Format status text
             status_text = get_status_text(status)
             
-            # Create message text
-            new_text = f'Заявка от {updated_lead[2]} (ID: {updated_lead[1]})\n\n{updated_lead[3]}\n\nСтатус: {status_text}\nИсполнитель: {updated_lead[7]} (@{updated_lead[6]})'
+            # Создаем новый текст сообщения, сохраняя структуру оригинального сообщения
+            # Удаляем старую информацию о статусе и исполнителе, если она есть
+            new_text = original_message_text
+            
+            # Удаляем старую информацию о статусе и исполнителе
+            status_index = new_text.find('\n📊 Статус:')
+            if status_index != -1:
+                new_text = new_text[:status_index]
+            
+            # Добавляем новую информацию о статусе и исполнителе
+            new_text += f'\n\n📊 Статус: {status_text}\n👨‍💼 Исполнитель: {updated_lead[7]} (@{updated_lead[6]})'
             
             # Edit message with new text and keep buttons
             buttons = create_status_buttons(lead_id)

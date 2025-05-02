@@ -79,16 +79,120 @@ def get_leads():
         leads = cursor.fetchall()
         logger.debug(f'Found {len(leads)} leads')
         
+        # Группировка заявок по номеру телефона
+        phone_groups = {}
+        
+        for lead in leads:
+            phone = lead['phone'] if lead['phone'] else ''
+            
+            # Если телефон пустой, не группируем
+            if not phone:
+                continue
+                
+            # Нормализуем телефон (убираем пробелы, тире и т.д.)
+            normalized_phone = ''.join(c for c in phone if c.isdigit() or c == '+')
+            
+            if normalized_phone not in phone_groups:
+                phone_groups[normalized_phone] = []
+                
+            phone_groups[normalized_phone].append(lead)
+        
         # Format leads for API response
         formatted_leads = []
+        
+        # Сначала обрабатываем группы
+        for normalized_phone, group in phone_groups.items():
+            # Считаем количество уникальных заявок по содержанию заказа
+            unique_orders = set()
+            for lead in group:
+                order = lead['order_details'] if lead['order_details'] else ''
+                unique_orders.add(order)
+            
+            # Берем самую новую заявку из группы (она уже отсортирована по дате)
+            latest_lead = group[0]
+            
+            # Получаем информацию об исполнителе
+            executor_id = latest_lead['executor_id'] if latest_lead['executor_id'] else None
+            executor_username = ''
+            executor_first_name = ''
+            
+            if executor_id and executor_id in users:
+                executor_username = users[executor_id]['username'] if users[executor_id]['username'] else ''
+                executor_first_name = users[executor_id]['first_name'] if 'first_name' in users[executor_id] else ''
+            
+            # Форматируем статус
+            status = latest_lead['status'] if latest_lead['status'] else 'new'
+            
+            # Форматируем данные заказа
+            order_details = latest_lead['order_details'] if latest_lead['order_details'] else ''
+            
+            # Создаем форматированную заявку
+            formatted_lead = {
+                'id': latest_lead['id'],
+                'username': latest_lead['username'] or 'Аноним',
+                'message': latest_lead['message'],
+                'created_at': format_date(latest_lead['created_at']),
+                'status': status,
+                'grouped': True,
+                'group_count': len(unique_orders),  # Количество уникальных заказов
+                'group_ids': [l['id'] for l in group],
+                
+                # Добавляем структурированные поля
+                'client_name': latest_lead['client_name'] if latest_lead['client_name'] else '',
+                'company': latest_lead['company'] if latest_lead['company'] else '',
+                'phone': latest_lead['phone'] if latest_lead['phone'] else '',
+                'city': latest_lead['city'] if latest_lead['city'] else '',
+                'address': latest_lead['address'] if latest_lead['address'] else '',
+                'order_details': order_details,
+                'total_amount': latest_lead['total_amount'] if latest_lead['total_amount'] else '',
+                'order_date': latest_lead['order_date'] if latest_lead['order_date'] else '',
+                
+                # Добавляем информацию об исполнителе
+                'executor_username': executor_username,
+                'executor_first_name': executor_first_name
+            }
+            formatted_leads.append(formatted_lead)
+        
+        # Затем добавляем все заявки для полного списка (нужно для модального окна)
         for lead in leads:
-            user = users.get(lead['telegram_id'], {})
+            # Получаем информацию об исполнителе
+            executor_id = lead['executor_id'] if lead['executor_id'] else None
+            executor_username = ''
+            executor_first_name = ''
+            
+            if executor_id and executor_id in users:
+                executor_username = users[executor_id]['username'] if users[executor_id]['username'] else ''
+                executor_first_name = users[executor_id]['first_name'] if 'first_name' in users[executor_id] else ''
+            
+            # Форматируем статус
+            status = lead['status'] if lead['status'] else 'new'
+            
+            # Форматируем данные заказа
+            order_details = lead['order_details'] if lead['order_details'] else ''
+            
+            # Создаем форматированную заявку
             formatted_lead = {
                 'id': lead['id'],
-                'username': user.get('username', 'Аноним'),
+                'username': lead['username'] or 'Аноним',
                 'message': lead['message'],
                 'created_at': format_date(lead['created_at']),
-                'status': lead['status'] if 'status' in lead else 'new'
+                'status': status,
+                'grouped': False,
+                'group_count': 1,
+                
+                # Добавляем структурированные поля
+                'client_name': lead['client_name'] if lead['client_name'] else '',
+                'company': lead['company'] if lead['company'] else '',
+                'phone': lead['phone'] if lead['phone'] else '',
+                'city': lead['city'] if lead['city'] else '',
+                'address': lead['address'] if lead['address'] else '',
+                'order_details': order_details,
+                'total_amount': lead['total_amount'] if lead['total_amount'] else '',
+                'order_date': lead['order_date'] if lead['order_date'] else '',
+                
+                # Добавляем информацию об исполнителе
+                'executor_username': executor_username,
+                'executor_first_name': executor_first_name
             }
             formatted_leads.append(formatted_lead)
         
