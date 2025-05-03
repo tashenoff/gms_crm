@@ -5,12 +5,14 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 import re
+from flask_cors import CORS
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+CORS(app)
 
 # Load environment variables
 load_dotenv()
@@ -150,6 +152,76 @@ def get_leads():
         logger.error(f'Error in get_leads: {e}')
         raise
 
+@app.route('/lead_details/<int:lead_id>', methods=['GET'])
+def get_lead_details(lead_id):
+    logger.debug(f'Handling lead details request for ID: {lead_id}')
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Получаем заявку по ID
+        cursor.execute('SELECT * FROM leads WHERE id = ?', (lead_id,))
+        lead = cursor.fetchone()
+        
+        if not lead:
+            return jsonify({'error': 'Lead not found'}), 404
+        
+        # Получаем информацию об исполнителе напрямую из записи
+        executor_username = lead['executor_username'] or ''
+        executor_first_name = lead['executor_first_name'] or ''
+        
+        # Форматируем статус
+        status = lead['status'] if lead['status'] else 'new'
+        
+        # Форматируем данные заказа
+        order_details = lead['order_details'] if lead['order_details'] else ''
+        
+        # Нормализуем телефон (если есть)
+        phone = lead['phone'] if lead['phone'] else ''
+        normalized_phone = ''.join(c for c in phone if c.isdigit() or c == '+') if phone else ''
+        
+        # Создаем форматированную заявку с дополнительными деталями
+        formatted_lead = {
+            'id': lead['id'],
+            'username': lead['username'] or 'Аноним',
+            'message': lead['message'],
+            'created_at': format_date(lead['created_at']),
+            'status': status,
+            
+            # Добавляем структурированные поля
+            'client_name': lead['client_name'] if lead['client_name'] else '',
+            'company': lead['company'] if lead['company'] else '',
+            'phone': lead['phone'] if lead['phone'] else '',
+            'normalized_phone': normalized_phone,
+            'city': lead['city'] if lead['city'] else '',
+            'address': lead['address'] if lead['address'] else '',
+            'order_details': order_details,
+            'total_amount': lead['total_amount'] if lead['total_amount'] else '',
+            'order_date': lead['order_date'] if lead['order_date'] else '',
+            
+            # Источник заявки из БД или по умолчанию
+            'source': lead['source'] if lead['source'] else 'сайт',
+            
+            # Добавляем информацию об исполнителе
+            'executor_username': executor_username,
+            'executor_first_name': executor_first_name
+        }
+        
+        # Получаем связанные заявки по телефону (если есть)
+        if normalized_phone:
+            cursor.execute('SELECT id FROM leads WHERE phone = ? AND id != ?', (lead['phone'], lead_id))
+            related_leads = [row['id'] for row in cursor.fetchall()]
+            formatted_lead['related_leads'] = related_leads
+            formatted_lead['related_count'] = len(related_leads) + 1  # +1 для текущей заявки
+        else:
+            formatted_lead['related_leads'] = []
+            formatted_lead['related_count'] = 1
+        
+        return jsonify(formatted_lead)
+    except Exception as e:
+        logger.error(f'Error in get_lead_details: {e}')
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/stats', methods=['GET'])
 def get_stats():
     try:
@@ -259,6 +331,8 @@ def reset_db():
     conn.close()
     return jsonify({'success': True})
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+    print('=== Flask URL MAP ===')
+    print(app.url_map)
     logger.info('Starting Flask server')
-    app.run(debug=True, host='0.0.0.0')
+    app.run(host="0.0.0.0", port=5000)
