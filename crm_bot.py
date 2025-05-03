@@ -47,7 +47,6 @@ def init_db():
             executor_id INTEGER,
             executor_username TEXT,
             executor_first_name TEXT,
-            
             client_name TEXT,
             company TEXT,
             phone TEXT,
@@ -56,7 +55,7 @@ def init_db():
             order_details TEXT,
             total_amount TEXT,
             order_date TEXT,
-            
+            source TEXT DEFAULT 'сайт',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (telegram_id) REFERENCES users (telegram_id)
         )
@@ -116,6 +115,11 @@ def init_db():
         
     try:
         cursor.execute('ALTER TABLE leads ADD COLUMN order_date TEXT')
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+        
+    try:
+        cursor.execute("ALTER TABLE leads ADD COLUMN source TEXT DEFAULT 'сайт'")
     except sqlite3.OperationalError:
         pass  # Column already exists
     
@@ -181,7 +185,8 @@ def parse_message_text(text):
         'address': '',
         'order_details': '',
         'total_amount': '',
-        'order_date': ''
+        'order_date': '',
+        'source': ''
     }
     
     # Default to original text if parsing fails
@@ -442,6 +447,7 @@ def save_message(message):
             
         # Parse message text into structured fields
         parsed_data = parse_message_text(text)
+        parsed_data['source'] = 'сайт'
         
         # Save to database
         conn = sqlite3.connect('crm.db')
@@ -451,14 +457,14 @@ def save_message(message):
             INSERT INTO leads (
                 telegram_id, username, message, 
                 client_name, company, phone, city, address, 
-                order_details, total_amount, order_date
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                order_details, total_amount, order_date, source
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             sender_id, username, text,
             parsed_data['client_name'], parsed_data['company'], 
             parsed_data['phone'], parsed_data['city'], 
             parsed_data['address'], parsed_data['order_details'], 
-            parsed_data['total_amount'], parsed_data['order_date']
+            parsed_data['total_amount'], parsed_data['order_date'], parsed_data['source']
         ))
         
         lead_id = cursor.lastrowid

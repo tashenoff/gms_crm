@@ -119,6 +119,9 @@ def get_leads():
                 'total_amount': lead['total_amount'] if lead['total_amount'] else '',
                 'order_date': lead['order_date'] if lead['order_date'] else '',
                 
+                # Источник заявки из БД или по умолчанию
+                'source': lead['source'] if lead['source'] else 'сайт',
+                
                 # Добавляем информацию об исполнителе
                 'executor_username': executor_username,
                 'executor_first_name': executor_first_name

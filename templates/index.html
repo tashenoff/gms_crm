@@ -233,6 +233,7 @@
                         ${lead.city ? `<div class="text-sm"><span class="font-medium">🏙️</span> ${lead.city}</div>` : ''}
                         ${lead.address ? `<div class="text-sm"><span class="font-medium">📍</span> ${lead.address}</div>` : ''}
                         ${lead.total_amount ? `<div class="text-sm"><span class="font-medium">💰</span> ${lead.total_amount}</div>` : ''}
+                        <div class="text-sm"><span class="font-medium">Источник:</span> ${lead.source || '—'}</div>
                     </div>
                     
                     ${lead.order_details ? `
@@ -305,6 +306,12 @@
                             <div class="bg-gray-50 p-3 rounded">
                                 <div class="text-xs text-gray-500 mb-1">📍 Адрес</div>
                                 <div class="font-medium">${lead.address}</div>
+                            </div>` : ''}
+                        
+                        ${lead.source ? `
+                            <div class="bg-gray-50 p-3 rounded">
+                                <div class="text-xs text-gray-500 mb-1">Источник</div>
+                                <div class="font-medium">${lead.source}</div>
                             </div>` : ''}
                         
                         ${lead.total_amount ? `
